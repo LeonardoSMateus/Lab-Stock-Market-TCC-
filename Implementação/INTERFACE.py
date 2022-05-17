@@ -1,6 +1,5 @@
-import pandas as pd 
+from turtle import width
 import streamlit as st
-import numpy as np
 from PIL import Image
 import VERIFICACOES as vf
 import APLICACAO as ap
@@ -9,8 +8,9 @@ import APLICACAO as ap
 st.sidebar.title("Menu",anchor=None)
 op =  st.sidebar.selectbox('Selecione a Pagina', ['Página Inicial','Sobre Indicadores','Laboratório'])
 st.sidebar.header('Autor')
-st.sidebar.write('Esta plataforma foi desenvolvido por Leonardo de Souza Mateus como projeto de TCC para a conclusão do curso de Engenharia da Computação na Universidade Federal do Paraná')
+st.sidebar.write('Esta plataforma foi desenvolvido por Leonardo de Souza Mateus como projeto de TCC para a conclusão do curso de Engenharia da Computação na Universidade Tecnológica Federal do Paraná')
 st.sidebar.header('Contato')
+st.sidebar.write('Email: leonardo.mateus@alunos.utfpr.edu.br')
 
 
 if op == 'Página Inicial':

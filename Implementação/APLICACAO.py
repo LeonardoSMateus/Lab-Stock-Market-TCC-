@@ -30,6 +30,7 @@ def get_dicionario():
 def get_dataframe(ativo, data_ini,data_fim):
     df = web.DataReader(ativo,data_source="yahoo",start=data_ini,end=data_fim)
     df.reset_index(level=0, inplace=True)
+    df = df.dropna()
     df['Date'] = df['Date'].astype(str)
     df['Date'] = df['Date'].str.replace('T00:00:00', '')
     return df
@@ -84,6 +85,28 @@ def medias_moveis(ativo,data_ini,data_fim,media_curta,media_longa):
     df_medias_moveis.loc[(df_medias_moveis['Anterior'] <0)&(df_medias_moveis['Atual'] >0),'Compra'] = df_medias_moveis['Close']
     df_medias_moveis.loc[(df_medias_moveis['Anterior'] >0)&(df_medias_moveis['Atual'] <0),'Venda'] = df_medias_moveis['Close']
 
+    #remove mesma operação consecutiva 
+    indices_compra = df_medias_moveis['Compra'].dropna().index
+    indices_venda =  df_medias_moveis['Venda'].dropna().index
+
+    if abs(len(indices_compra) - len(indices_venda)) == 2:
+        if len(indices_compra) < len(indices_venda):
+            for i in range(0,len(indices_compra)):
+                if indices_venda[i] < indices_compra[i] and indices_venda[i+1] < indices_compra[i]:
+                    df_medias_moveis['Venda'][indices_venda[i+1]] = None
+                    break
+                if indices_compra[i] < indices_venda[i] and indices_compra[i+1] < indices_venda[i]:
+                    df_medias_moveis['Compra'][indices_compra[i+1]] = None
+                    break
+        else:
+            for i in range(0,len(indices_venda)):
+                if indices_venda[i] < indices_compra[i] and indices_venda[i+1] < indices_compra[i]:
+                    df_medias_moveis['Venda'][indices_venda[i+1]] = None
+                    break
+                if indices_compra[i] < indices_venda[i] and indices_compra[i+1] < indices_venda[i]:
+                    df_medias_moveis['Compra'][indices_compra[i+1]] = None
+                    break
+    
     fig = grafico_medias_moveis(curta,longa)
 
     return fig
@@ -261,18 +284,338 @@ def get_bkt_medias_moveis():
     l1 = pd.Series([float('nan'),float('nan'),float('nan'),float('nan'),float('nan'),float('nan'),float('nan'),float('nan'),float('nan'),float('nan')])
     df_backtest =  pd.DataFrame([list(l1)], columns = ['Taxa Acerto','Media Ganho', 'Media Perda', 'Payoff', 'N Sinais Compra', 'N Sinais Venda','N Sinais', 'N Sinais Ano', 'Lucro Final', 'Rentabilidade Final'])
     
-    df_backtest['Taxa Acerto'][0] =    get_taxa_acerto(df_medias_moveis)
-    df_backtest['Media Ganho'][0] =    get_media_ganho(df_medias_moveis)
-    df_backtest['Media Perda'][0] =    get_media_perda(df_medias_moveis)
-    df_backtest['Payoff'][0] =         get_payoff(df_medias_moveis)
+    acertos, ganhos, perdas = get_ganhos_e_perdas(df_medias_moveis)
+    
+    df_backtest['Taxa Acerto'][0] =    get_taxa_acerto(acertos)
+    df_backtest['Media Ganho'][0] =    get_media_ganho(ganhos)
+    df_backtest['Media Perda'][0] =    get_media_perda(perdas)
+    df_backtest['Payoff'][0] =         get_payoff(ganhos,perdas)
     df_backtest['N Sinais Compra'][0] = get_sinais_compra(df_medias_moveis)
     df_backtest['N Sinais Venda'][0] = get_sinais_venda(df_medias_moveis)
     df_backtest['N Sinais'][0] =       get_total_sinais(df_medias_moveis)
     df_backtest['N Sinais Ano'][0] =   get_total_sinais_ano(df_medias_moveis)
-    df_backtest['Lucro Final'][0] =    get_lucro(df_medias_moveis)
-    df_backtest['Rentabilidade Final'][0] = get_rentabilidade(df_medias_moveis)
+    df_backtest['Lucro Final'][0] =    get_lucro(ganhos,perdas,1)
+    df_backtest['Rentabilidade Final'][0] = get_rentabilidade(ganhos,perdas,1)
 
     return df_backtest
+
+def get_ganhos_e_perdas(df):
+    df = df.reset_index()
+    indices_compra = df['Compra'].dropna().index
+    indices_venda =  df['Venda'].dropna().index
+    acertos = list()
+    ganhos = list()
+    perdas = list()
+
+    if len(indices_venda) > len(indices_compra):
+        for i in range(0,len(indices_venda)):
+            if i < len(indices_venda) - 1:
+                #a primeira entrada é de venda
+                if indices_venda[i] < indices_compra[i]:
+                    if abs(indices_venda[i] - indices_compra[i]) < 30:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_compra[i]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_venda[i]+20]:
+                                acertos.append(1.0)
+                                ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                    
+                    #segundo cruzamento, segunda entrada é de compra
+                    if abs(indices_compra[i] - indices_venda[i+1]) < 30:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_venda[i+1]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i+1]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i+1]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_compra[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                    
+                #a primeira entrada é de compra
+                else:
+                    if abs(indices_compra[i] - indices_venda[i]) < 30:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_venda[i]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_compra[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append(( df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append(( df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        
+                    #segundo cruzamento, segunda entrada é de venda
+                    if abs(indices_venda[i] - indices_compra[i+1]) < 30:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_compra[i+1]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i+1]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i+1]]))
+                    else:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_venda[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+            #último cruzamento e entrada é de venda           
+            else:
+                if df['Close'].loc[indices_venda[i]] >= df['Close'][len(df)-1]:
+                    acertos.append(1.0)
+                    ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'][len(df)-1]))
+                else:
+                    acertos.append(0.0)
+                    ganhos.append(0.0)
+                    perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'][len(df)-1]))
+
+    elif len(indices_venda) == len(indices_compra):
+        for i in range(0,len(indices_venda)):
+            if i < len(indices_venda) - 1:
+                #a primeira entrada é de venda
+                if indices_venda[i] < indices_compra[i]:
+                    if abs(indices_venda[i] - indices_compra[i]) < 30:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_compra[i]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_venda[i]+20]:
+                                acertos.append(1.0)
+                                ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                    
+                    #segundo cruzamento, segunda entrada é de compra
+                    if abs(indices_compra[i] - indices_venda[i+1]) < 30:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_venda[i+1]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i+1]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i+1]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_compra[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                    
+                #a primeira entrada é de compra
+                else:
+                    if abs(indices_compra[i] - indices_venda[i]) < 30:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_venda[i]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_compra[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append(( df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append(( df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        
+                    #segundo cruzamento, segunda entrada é de venda
+                    if abs(indices_venda[i] - indices_compra[i+1]) < 30:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_compra[i+1]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i+1]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i+1]]))
+                    else:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_venda[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+            #dois últimos cruzamento          
+            else:
+                #penúltima entrada é de venda e a última é de compra
+                if indices_venda[-1:][0] < indices_compra[-1:][0]:
+                    #penúltima (venda)
+                    if abs(indices_venda[i] - indices_compra[i]) < 30:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_compra[i]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_venda[i]+20]:
+                                acertos.append(1.0)
+                                ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                            
+                    #última entrada (compra)
+                    if df['Close'].loc[indices_compra[i]] <= df['Close'][len(df)-1]:
+                        acertos.append(1.0)
+                        ganhos.append((df['Close'][len(df)-1] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        acertos.append(0.0)
+                        ganhos.append(0.0)
+                        perdas.append((df['Close'][len(df)-1] - df['Close'].loc[indices_compra[i]]))
+                
+                #penúltima entrada é de compra e a última é de venda
+                else:
+                    #penúltima (compra)
+                    if abs(indices_compra[i] - indices_venda[i]) < 30:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_venda[i]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_compra[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append(( df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append(( df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                    
+                    #última entrada (venda)
+                    if df['Close'].loc[indices_venda[i]] >= df['Close'][len(df)-1]:
+                        acertos.append(1.0)
+                        ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'][len(df)-1]))
+                    else:
+                        acertos.append(0.0)
+                        ganhos.append(0.0)
+                        perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'][len(df)-1]))
+                    
+    else:
+        for i in range(0,len(indices_compra)):
+            if i < len(indices_compra) - 1:
+                #a primeira entrada é de venda
+                if indices_venda[i] < indices_compra[i]:
+                    if abs(indices_venda[i] - indices_compra[i]) < 30:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_compra[i]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_venda[i]+20]:
+                                acertos.append(1.0)
+                                ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                    
+                    #segundo cruzamento, segunda entrada é de compra
+                    if abs(indices_compra[i] - indices_venda[i+1]) < 30:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_venda[i+1]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i+1]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i+1]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_compra[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                    
+                #a primeira entrada é de compra
+                else:
+                    if abs(indices_compra[i] - indices_venda[i]) < 30:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_venda[i]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i]]))
+                    else:
+                        if df['Close'].loc[indices_compra[i]] < df['Close'].loc[indices_compra[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append(( df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append(( df['Close'].loc[indices_compra[i]+20] - df['Close'].loc[indices_compra[i]]))
+                        
+                    #segundo cruzamento, segunda entrada é de venda
+                    if abs(indices_venda[i] - indices_compra[i+1]) < 30:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_compra[i+1]]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i+1]]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_compra[i+1]]))
+                    else:
+                        if df['Close'].loc[indices_venda[i]] > df['Close'].loc[indices_venda[i]+20]:
+                            acertos.append(1.0)
+                            ganhos.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+                        else:
+                            acertos.append(0.0)
+                            ganhos.append(0.0)
+                            perdas.append((df['Close'].loc[indices_venda[i]] - df['Close'].loc[indices_venda[i]+20]))
+            #último cruzamento e entrada é de compra     
+            else:
+                if df['Close'].loc[indices_compra[i]] <= df['Close'][len(df)-1]:
+                    acertos.append(1.0)
+                    ganhos.append((df['Close'][len(df)-1] - df['Close'].loc[indices_compra[i]]))
+                else:
+                    acertos.append(0.0)
+                    ganhos.append(0.0)
+                    perdas.append((df['Close'][len(df)-1] - df['Close'].loc[indices_compra[i]]))
+    
+    return acertos, ganhos, perdas
 
 def get_sinais_venda(df):
     df = df.reset_index()
@@ -281,10 +624,6 @@ def get_sinais_venda(df):
 def get_sinais_compra(df):
     df = df.reset_index()
     return len(df['Compra'].dropna())
-
-def get_sinais_venda(df):
-    df = df.reset_index()
-    return len(df['Venda'].dropna())
 
 def get_total_sinais(df):
     return (get_sinais_compra(df) + get_sinais_venda(df))
@@ -297,80 +636,35 @@ def get_total_sinais_ano(df):
     quantidade_anos = abs((data_fim - data_ini).days) / 365
     return round((get_total_sinais(df) / quantidade_anos),2)
 
-def get_taxa_acerto(df):
-    acertos = list()
-    df = df.reset_index()
-    indices = df['Compra'].dropna().index
-    for i in indices: 
-        if df['Close'].loc[i] > df['Close'].loc[i+5]:
-            acertos.append(0.0)
-        else:
-            acertos.append(1.0)
-            
-    indices = df['Venda'].dropna().index
-    for i in indices: 
-        if df['Close'].loc[i] < df['Close'].loc[i+5]:
-            acertos.append(0.0)
-        else:
-            acertos.append(1.0)
-    return str(round((sum(acertos) / len(acertos)*100),2))+' %'
+def get_taxa_acerto(acertos):
+    if acertos: return str(round((sum(acertos) / len(acertos)*100),2))+' %'
+    else: return str(0.0)+' %'
 
-def get_ganhos(df):
-    ganhos = list()
-    df = df.reset_index()
-    indices = df['Compra'].dropna().index
-    for i in indices: 
-        if df['Close'].loc[i] > df['Close'].loc[i+5]:
-            ganhos.append(0.0)
-        else:
-            ganhos.append((df['Close'].loc[i+5] - df['Close'].loc[i]))
+def get_media_ganho(ganhos):
+    if ganhos: return round(sum(ganhos) / len(ganhos),2)
+    else: return 0.0
 
-    indices = df['Venda'].dropna().index
-    for i in indices: 
-        if df['Close'].loc[i] < df['Close'].loc[i+5]:
-            ganhos.append(0.0)
-        else:
-            ganhos.append((df['Close'].loc[i] - df['Close'].loc[i+5]))
-    return ganhos
+def get_media_perda(perdas):
+    if perdas: return round(sum(perdas) / len(perdas),2)
+    else: return 0.0
 
-def get_perdas(df):
-    perdas = list()
-    df = df.reset_index()
-    indices = df['Compra'].dropna().index
-    for i in indices: 
-        if df['Close'].loc[i] > df['Close'].loc[i+5]:
-            perdas.append((df['Close'].loc[i+5] - df['Close'].loc[i]))
-        else:
-            perdas.append(0.0)
+def get_payoff(ganhos,perdas):
+    if perdas: return  round((get_media_ganho(ganhos) / get_media_perda(perdas)*-1),2)
+    else: return 0.0
 
-    indices = df['Venda'].dropna().index
-    for i in indices: 
-        if df['Close'].loc[i] < df['Close'].loc[i+5]:
-            perdas.append((df['Close'].loc[i] - df['Close'].loc[i+5]))
-        else:
-            perdas.append(0.0)
-    return perdas
-
-def get_media_ganho(df):
-    return round((sum(get_ganhos(df)) / len(get_ganhos(df))),2)
-
-def get_media_perda(df):
-    return round((sum(get_perdas(df)) / len(get_perdas(df))),2)
-
-def get_payoff(df):
-    return  round((get_media_ganho(df) / get_media_perda(df)*-1),2)
-
-def get_lucro(df,valor_entrada=1):
+def get_lucro(ganhos,perdas,valor_entrada=1):
     lucro = list()
-    ganhos = get_ganhos(df)
-    perdas = get_perdas(df)
+    if ganhos or perdas:
+        for i in ganhos:
+            lucro.append(i * valor_entrada)
 
-    for i in ganhos:
-        lucro.append(i * valor_entrada)
-    for j in perdas:
-        lucro.append(j * valor_entrada)
+        for j in perdas:
+            lucro.append(j * valor_entrada)
 
-    return round(sum(lucro),2)
+        return round(sum(lucro),2)
+    else:
+        return 0.0
 
-def get_rentabilidade(df,valor_entrada=1):
-    return str(round((get_lucro(df,valor_entrada)/valor_entrada* 100),2))+' %'
+def get_rentabilidade(ganhos,perdas,valor_entrada=1):
+    if valor_entrada != 0: return str(round((get_lucro(ganhos,perdas,valor_entrada)/valor_entrada* 100),2))+' %'
+    else: return str(0.0)+' %'

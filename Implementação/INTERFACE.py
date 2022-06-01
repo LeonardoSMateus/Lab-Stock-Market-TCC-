@@ -22,6 +22,20 @@ if op == 'Página Inicial':
 elif op == 'Sobre Indicadores':
     #### INTERFACE DE APRESENTAÇÃO DOS INDICADORES #############
     st.title('Indicadores da Análise Técnica',anchor=None)
+    tp = st.container()
+    tp.subheader('Topo-Duplo')
+    tp.write('O TD, como o próprio nome sugere, é formado por dois topos consecutivos separados entre si por um fundo, similar a letra M. Ele indica que o preço tentou por duas vezes dar continuidade à tendência de alta, mas encontrou alguma barreira, sinalizando então que este é o preço máximo que o ativo pode alcançar no momento e assim se inicia uma tendência de baixa.')
+    tp.image(Image.open('E:/UTFPR/9ºSEM_2021/TCC1/Exemplos de TCC/figuras/figura7.jpg'))
+    tp.write('A entrada na operação é de venda no instante que é confirmado o rompimento da linha de suporte, cujo objetivo é a mesma variação entre a linha de suporte e resistência, porém projetada abaixo da linha do suporte.')
+
+    fp = st.container()
+    fp.subheader('Fundo-Duplo')
+    fp.write('O FD é o oposto do Topo-Duplo, ou seja, é sempre formado em uma tendência de baixa indicando uma possível mudança para uma tendência de alta. Esse modelo gráfico é caracterizado por uma sequência de dois mínimos locais separados entre si por um máximo local, semelhante a letra W.')
+    fp.image(Image.open('E:/UTFPR/9ºSEM_2021/TCC1/Exemplos de TCC/figuras/figura8.jpg'))
+    fp.write('A operação é de compra no instante que é confirmado o rompimento da linha de resistência, cujo o alvo a atingir é a mesma variação entre a linha de suporte e resistência porém projetada acima da linha de resistência.')
+
+    cmm = st.container()
+    cmm.subheader('Cruzamento de Médias Móveis')
 elif op == 'Laboratório':
     #### CONTANEIR DE OPÇÕES #############
      coption = st.container()

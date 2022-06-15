@@ -1,11 +1,10 @@
 ##################################### BIBLIOTECAS #############################
 import pandas as pd 
-import numpy as np
 import plotly.graph_objects as go
 import pandas_datareader.data as web
 from datetime import datetime
 from PIL import Image
-
+import tensorflow as tf
 ##############################################################
 
 ############### ENTENDIMENTO DOS DADOS #######################################
@@ -274,6 +273,18 @@ def get_resistencia(ativo,data_ini,data_fim):
                     )
         c+=1  
     return fig
+
+######### DETECTOR DE TOPO-DUPLO E FUNDO-DUPLO #########
+def predict(image_file:Image.Image):
+    model = tf.keras.models.load_model('model')
+
+    image = tf.keras.preprocessing.image.load_img(image_file, target_size = (80,100))
+    image = tf.keras.preprocessing.image.img_to_array(image)
+    image = tf.expand_dims(image, 0)
+
+    prediction = model.predict(image)[0][0]
+    
+    return prediction 
 
 ###################################################################################################################
 
